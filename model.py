@@ -204,9 +204,10 @@ class VisionTransformer(nn.Module):
         self.classifier = nn.Linear(embed_dim, num_classes)
 
         #sigma
-        self.sigmas = torch.zeros((4, n_iterations)).cuda()
+        out_dim = 4
+        self.sigmas = torch.zeros((out_dim+1, n_iterations)).cuda()
         self.softmax = nn.Softmax(dim=1)
-        self.MI = torch.zeros((n_iterations, 3, 2)).cuda()  # To store MI values
+        self.MI = torch.zeros((n_iterations, out_dim, 2)).cuda()  # To store MI values
         
         # Initialize weights
         self.apply(self._init_weights)
@@ -230,8 +231,10 @@ class VisionTransformer(nn.Module):
         x = self.patch_embed(x)  # (B, 65, 256)
         
         # Pass through Transformer encoder layers
-        for layer in self.encoder_layers[:-1]:
+        for i, layer in enumerate(self.encoder_layers[:-1]):
             x = layer(x)  # (B, 65, 256)
+            if i == 2:
+                layer_FMSA_mid = x.view(x.size(0), -1) # Save for MI analysis # (B, 65*256)
 
         layer_FMSA = x.view(x.size(0), -1)  # Save for MI analysis # (B, 65*256)
         x = self.encoder_layers[-1](x)
@@ -246,7 +249,7 @@ class VisionTransformer(nn.Module):
         # Classification head (B, num_classes)
         logits = self.classifier(class_token_feature)  # (B, 10)
         
-        return [logits, layer_CLS, layer_FMSA]
+        return [logits, layer_CLS, layer_FMSA, layer_FMSA_mid]
     
     def dist_mat(self, x):
         '''Calculate pairwise Euclidean distance matrix'''
@@ -302,15 +305,12 @@ class VisionTransformer(nn.Module):
 
     def kernel_loss(self, k_x, k_y, k_l, idx):
 
-        b = 1.0
-        beta = [b, b, b]
-
         L = torch.norm(k_l)
-        Y = torch.norm(k_y) ** beta[idx]
-        X = torch.norm(k_x) ** (1-beta[idx])
+        Y = torch.norm(k_y)
+        X = 1
 
-        LY = torch.trace(torch.matmul(k_l, k_y))**beta[idx]
-        LX = torch.trace(torch.matmul(k_l, k_x))**(1-beta[idx])
+        LY = torch.trace(torch.matmul(k_l, k_y))
+        LX = 1
 
         return 2*torch.log2((LY*LX)/(L*Y*X))
 

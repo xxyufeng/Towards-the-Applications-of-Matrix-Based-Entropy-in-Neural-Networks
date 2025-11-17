@@ -93,8 +93,8 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device, epoch):
         # Update progress bar
         avg_loss = total_loss / total_samples
         avg_acc = total_correct / total_samples
-        I_T_X = model.MI[current_iteration, 1, 0]
-        I_T_Y = model.MI[current_iteration, 1, 1]
+        I_T_X = model.MI[current_iteration, -1, 0]
+        I_T_Y = model.MI[current_iteration, -1, 1]
         pbar.set_postfix({'Loss': f'{avg_loss:.4f}', 'Acc': f'{avg_acc:.4f}', 'I(T;X)': f'{I_T_X:.4f}', 'I(T;Y)': f'{I_T_Y:.4f}'})
 
         iteration += 1
@@ -166,8 +166,8 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
         history['val_acc'].append(val_acc)
 
         #Show I(T;X) and I(T;Y) for the last iteration of this epoch
-        I_T_X = model.MI[(epoch+1) * len(train_loader) - 1, 1, 0]
-        I_T_Y = model.MI[(epoch+1) * len(train_loader) - 1, 1, 1]
+        I_T_X = model.MI[(epoch+1) * len(train_loader) - 1, -1, 0]
+        I_T_Y = model.MI[(epoch+1) * len(train_loader) - 1, -1, 1]
         
         # Print epoch summary
         print(f'Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | '
@@ -184,13 +184,14 @@ if __name__ == "__main__":
     # Configuration (adjust based on server resources)
     BATCH_SIZE = 256
     IMG_SIZE = 32
-    EPOCHS = 100
+    EPOCHS = 1
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-5  # Regularization to prevent overfitting
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     DATASET = 'CIFAR10'
     DATADIR = './datasets'
-    OUTPUT = 'vit_cifar10_mi_results.csv'
+    OUTPUT = 'vit_cifar10_mi_results_1116.csv'
+    HISTORY = 'vit_cifar10_training_history_1116.csv'
     NCHANNELS = 3  # RGB images
     
     # Step 1: Load data
@@ -243,6 +244,7 @@ if __name__ == "__main__":
         writer = csv.writer(csvfile)
         if not file_exists:
             writer.writerow(['Iteration',
+                             'layer_FMSA_mid: I(X;T)', 'layer_FMSA_mid: I(T;Y)',
                              'layer_FMSA: I(X;T)', 'layer_FMSA: I(T;Y)',
                              'layer_CLS: I(X;T)', 'layer_CLS: I(T;Y)',
                              'layer_LAST: I(X;T)', 'layer_LAST: I(T;Y)'])
@@ -256,7 +258,19 @@ if __name__ == "__main__":
         n_iter = mi_arr.shape[0]
         for it in range(n_iter):
             # flatten in the order: layer0 I(X;T), layer0 I(T;Y), layer1 I(X;T), ...
-            row = [it] + [float(mi_arr[it, layer, col]) for layer in range(3) for col in range(2)]
+            row = [it] + [float(mi_arr[it, layer, col]) for layer in range(4) for col in range(2)]
             writer.writerow(row)
 
-    print(f'Results saved to {OUTPUT}')
+    with open(HISTORY, mode='w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Epoch', 'Train Loss', 'Train Acc', 'Val Loss', 'Val Acc'])
+        for epoch in range(EPOCHS):
+            writer.writerow([
+                epoch + 1,
+                history['train_loss'][epoch],
+                history['train_acc'][epoch],
+                history['val_loss'][epoch],
+                history['val_acc'][epoch]
+            ])
+
+    print(f'Results and history saved to {OUTPUT} and {HISTORY} respectively.')
